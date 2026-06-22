@@ -146,7 +146,8 @@ export default function App() {
                   name: "Boeing Music Bot",
                   year: "2026",
                   desc: "An async Telegram music bot that searches and streams tracks in real-time.",
-                  tags: ["Python", "Requests"]
+                  tags: ["Python", "Requests"],
+                  link: "https://github.com/ulugbekovpy/boeingmusicbot"
                 },
                 {
                   name: "TV Info API",
@@ -170,7 +171,9 @@ export default function App() {
                 <div key={project.name} className="group border border-neutral-200 rounded-xl p-5 hover:border-black transition-all bg-white shadow-sm flex flex-col justify-between min-h-[180px]">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-semibold text-lg text-neutral-900 group-hover:underline cursor-pointer">{project.name}</h3>
+                      <a href={project.link}>
+                        <h3 className="font-semibold text-lg text-neutral-900 group-hover:underline cursor-pointer">{project.name}</h3>
+                      </a>
                       <span className="text-xs text-neutral-400 font-mono">{project.year}</span>
                     </div>
                     <p className="text-sm text-neutral-600 leading-relaxed">
