@@ -2,7 +2,20 @@ import React, { useState } from 'react';
 import './index.css'
 
 export default function App() {
-  const [currentPage, setCurrentPage] = useState('home');
+  const [currentPage, setCurrentPage] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('page') || 'home';
+  });
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (currentPage === 'home') {
+      url.searchParams.delete('page');
+    } else {
+      url.searchParams.set('page', currentPage);
+    }
+    window.history.pushState({}, '', url.toString());
+  }, [currentPage]);
 
   return (
     <div className="min-h-screen bg-white text-black font-sans antialiased selection:bg-black selection:text-white">
