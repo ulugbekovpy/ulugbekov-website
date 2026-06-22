@@ -143,6 +143,12 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {[
                 {
+                  name: "Boeing Music Bot",
+                  year: "2026",
+                  desc: "An async Telegram music bot that searches and streams tracks in real-time.",
+                  tags: ["Python", "Requests"]
+                },
+                {
                   name: "TV Info API",
                   year: "2025",
                   desc: "A high-performance RESTful API designed to fetch, aggregate, and deliver real-time television programming data and show schedules with minimal latency.",
