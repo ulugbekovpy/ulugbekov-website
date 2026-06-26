@@ -37,12 +37,16 @@ export default function App() {
       setLoading(true);
       
       const channelUrl = `https://t.me/s/${TELEGRAM_CHANNEL_USERNAME}`;
-      
-      const proxies = [
-        `https://cors-anywhere.azm.workers.dev/${channelUrl}`,
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(channelUrl)}`,
-        `https://api.allorigins.win/get?url=${encodeURIComponent(channelUrl)}`
-      ];
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+      // Если мы на Netlify, используем внутренний прокси /api-telegram/, если локально — массив сторонних
+      const proxies = isLocalhost 
+        ? [
+            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(channelUrl)}`,
+            `https://cors-anywhere.azm.workers.dev/${channelUrl}`,
+            `https://api.allorigins.win/get?url=${encodeURIComponent(channelUrl)}`
+          ]
+        : [`/api-telegram/${TELEGRAM_CHANNEL_USERNAME}`];
 
       const fetchWithFallback = (proxyIndex) => {
         if (proxyIndex >= proxies.length) {
@@ -53,10 +57,12 @@ export default function App() {
         fetch(proxies[proxyIndex])
           .then(res => {
             if (!res.ok) throw new Error();
+            // Netlify вернет чистый текст (HTML), а некоторые прокси возвращают JSON
             return res.json().catch(() => res.text().then(text => ({ contents: text })));
           })
           .then(data => {
-            const htmlString = data.contents || data.result || (typeof data === 'string' ? data : null);
+            // Если пришел чистый HTML (от Netlify или codetabs), data будет строкой, заворачиваем в contents
+            const htmlString = typeof data === 'string' ? data : (data.contents || data.result);
             
             if (!htmlString) throw new Error();
 
