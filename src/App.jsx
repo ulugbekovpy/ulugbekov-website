@@ -55,20 +55,32 @@ export default function App() {
         }
 
         fetch(proxies[proxyIndex])
-          .then(res => {
-            if (!res.ok) throw new Error();
-            // Netlify вернет чистый текст (HTML), а некоторые прокси возвращают JSON
-            return res.json().catch(() => res.text().then(text => ({ contents: text })));
-          })
-          .then(data => {
-            // Если пришел чистый HTML (от Netlify или codetabs), data будет строкой, заворачиваем в contents
-            const htmlString = typeof data === 'string' ? data : (data.contents || data.result);
-            
-            if (!htmlString) throw new Error();
+  .then(res => {
+    if (!res.ok) throw new Error('Сетевая ошибка');
+    
+    // Проверяем тип контента, который вернул сервер
+    const contentType = res.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      return res.json(); // Если это JSON (локалка со сторонними прокси)
+    } else {
+      return res.text(); // Если это чистый HTML (Netlify продакшн)
+    }
+  })
+  .then(data => {
+    // Гарантированно получаем строку HTML, независимо от источника
+    let htmlString = '';
+    
+    if (typeof data === 'string') {
+      htmlString = data; // Для Netlify
+    } else if (data && typeof data === 'object') {
+      htmlString = data.contents || data.result || ''; // Для старых прокси
+    }
 
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(htmlString, 'text/html');
-            const widgetPosts = doc.querySelectorAll('.tgme_widget_message');
+    if (!htmlString) throw new Error('Пустой HTML');
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlString, 'text/html');
+    const widgetPosts = doc.querySelectorAll('.tgme_widget_message');
 
             if (widgetPosts.length === 0) throw new Error();
 
