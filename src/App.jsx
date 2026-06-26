@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import './index.css'
+import './index.css';
+
+const TELEGRAM_CHANNEL_USERNAME = 'ulugbekovpy'; 
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState(() => {
@@ -7,24 +9,122 @@ export default function App() {
     return params.get('page') || 'home';
   });
 
+  const [selectedPostId, setSelectedPostId] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('post') || null;
+  });
+
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     const url = new URL(window.location.href);
     if (currentPage === 'home') {
       url.searchParams.delete('page');
+      url.searchParams.delete('post');
+    } else if (currentPage === 'blog-view' && selectedPostId) {
+      url.searchParams.set('page', 'blog');
+      url.searchParams.set('post', selectedPostId);
     } else {
       url.searchParams.set('page', currentPage);
+      url.searchParams.delete('post');
     }
     window.history.pushState({}, '', url.toString());
+  }, [currentPage, selectedPostId]);
+
+  useEffect(() => {
+    if (currentPage === 'blog' || currentPage === 'blog-view') {
+      setLoading(true);
+      
+      const channelUrl = `https://t.me/s/${TELEGRAM_CHANNEL_USERNAME}`;
+      
+      const proxies = [
+        `https://cors-anywhere.azm.workers.dev/${channelUrl}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(channelUrl)}`,
+        `https://api.allorigins.win/get?url=${encodeURIComponent(channelUrl)}`
+      ];
+
+      const fetchWithFallback = (proxyIndex) => {
+        if (proxyIndex >= proxies.length) {
+          setLoading(false);
+          return;
+        }
+
+        fetch(proxies[proxyIndex])
+          .then(res => {
+            if (!res.ok) throw new Error();
+            return res.json().catch(() => res.text().then(text => ({ contents: text })));
+          })
+          .then(data => {
+            const htmlString = data.contents || data.result || (typeof data === 'string' ? data : null);
+            
+            if (!htmlString) throw new Error();
+
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(htmlString, 'text/html');
+            const widgetPosts = doc.querySelectorAll('.tgme_widget_message');
+
+            if (widgetPosts.length === 0) throw new Error();
+
+            const fetchedPosts = Array.from(widgetPosts).map((postEl, index) => {
+              const linkEl = postEl.querySelector('.tgme_widget_message_date');
+              const postLink = linkEl ? linkEl.getAttribute('href') : '';
+              const id = postLink ? postLink.split('/').pop() : `post-${index}`;
+
+              const textEl = postEl.querySelector('.tgme_widget_message_text');
+              const contentHtml = textEl ? textEl.innerHTML : 'Пустая заметка или медиафайл';
+              const cleanText = textEl ? textEl.textContent.substring(0, 160) + '...' : 'Медиафайл...';
+
+              const titleText = textEl 
+                ? textEl.textContent.split('\n')[0].substring(0, 60) + (textEl.textContent.split('\n')[0].length > 60 ? '...' : '')
+                : `Заметка #${id}`;
+
+              const photoEl = postEl.querySelector('.tgme_widget_message_photo_wrap');
+              let image = null;
+              if (photoEl) {
+                const bgImg = photoEl.getAttribute('style');
+                const imgMatch = bgImg ? bgImg.match(/url\(['"]?([^'"]+)['"]?\)/) : null;
+                if (imgMatch && imgMatch[1]) {
+                  image = imgMatch[1];
+                }
+              }
+
+              const dateEl = postEl.querySelector('.time');
+              const dateText = dateEl ? dateEl.textContent : 'Недавно';
+
+              return {
+                id,
+                title: titleText,
+                date: dateText,
+                excerpt: cleanText,
+                content: contentHtml,
+                image: image,
+                link: postLink || `https://t.me/${TELEGRAM_CHANNEL_USERNAME}/${id}`,
+                tags: ["Telegram", "Live"]
+              };
+            }).reverse();
+
+            setPosts(fetchedPosts);
+            setLoading(false);
+          })
+          .catch(() => {
+            fetchWithFallback(proxyIndex + 1);
+          });
+      };
+
+      fetchWithFallback(0);
+    }
   }, [currentPage]);
+
+  const currentPost = posts.find(p => p.id === selectedPostId);
 
   return (
     <div className="min-h-screen bg-white text-black font-sans antialiased selection:bg-black selection:text-white">
       <header className="fixed top-6 left-1/2 -translate-x-1/2 z-50">
         <nav className="flex items-center gap-1 bg-[#f5f5f5] border border-[#e5e5e5] p-1.5 rounded-full shadow-sm">
           <button
-            onClick={() => setCurrentPage('home')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${currentPage === 'home' ? 'bg-black text-white' : 'text-neutral-600 hover:text-black'
-              }`}
+            onClick={() => { setCurrentPage('home'); setSelectedPostId(null); }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${currentPage === 'home' ? 'bg-black text-white' : 'text-neutral-600 hover:text-black'}`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
@@ -33,9 +133,8 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => setCurrentPage('projects')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${currentPage === 'projects' ? 'bg-black text-white' : 'text-neutral-600 hover:text-black'
-              }`}
+            onClick={() => { setCurrentPage('projects'); setSelectedPostId(null); }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${currentPage === 'projects' ? 'bg-black text-white' : 'text-neutral-600 hover:text-black'}`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 012.008 1.24l.885 1.77a2.25 2.25 0 002.007 1.24h1.98a2.25 2.25 0 002.007-1.24l.885-1.77a2.25 2.25 0 012.007-1.24h3.86m-18 0h18M2.25 13.5l1.117-7.261A2.25 2.25 0 015.597 4.25h12.806a2.25 2.25 0 012.23 2.011l1.117 7.239m-18 0v6.75A2.25 2.25 0 005.25 21h13.5a2.25 2.25 0 002.25-2.25v-6.75M15.375 12h.008v.008h-.008V12zm3 0h.008v.008h-.008V12z" />
@@ -43,15 +142,15 @@ export default function App() {
             <span>Projects</span>
           </button>
 
-          <div className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-neutral-400 cursor-not-allowed select-none relative group">
+          <button
+            onClick={() => { setCurrentPage('blog'); setSelectedPostId(null); }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${currentPage === 'blog' || currentPage === 'blog-view' ? 'bg-black text-white' : 'text-neutral-600 hover:text-black'}`}
+          >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
             </svg>
             <span>Blog</span>
-            <span className="text-[10px] bg-neutral-200 text-neutral-500 px-1.5 py-0.5 rounded-md font-normal scale-90 tracking-wide">
-              soon
-            </span>
-          </div>
+          </button>
         </nav>
       </header>
 
@@ -94,7 +193,7 @@ export default function App() {
               </div>
 
               <div className="flex flex-wrap gap-3 pt-2">
-                <a href="https://t.me/ulugbekovx">
+                <a href="https://t.me/ulugbekovx" target="_blank" rel="noreferrer">
                   <button className="flex items-center gap-2 bg-black text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-neutral-800 transition-colors shadow-sm">
                     <span>Hire Me</span>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -102,7 +201,7 @@ export default function App() {
                     </svg>
                   </button>
                 </a>
-                <a href="https://drive.usercontent.google.com/u/0/uc?id=1-cOlOGMEgqCGcWF_Vygf8PjAKxYeB-3W&export=download">
+                <a href="https://drive.usercontent.google.com/u/0/uc?id=1-cOlOGMEgqCGcWF_Vygf8PjAKxYeB-3W&export=download" target="_blank" rel="noreferrer">
                   <button className="flex items-center gap-2 bg-white text-black border border-neutral-300 px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-neutral-50 transition-colors shadow-sm">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -110,27 +209,6 @@ export default function App() {
                     <span>Download CV</span>
                   </button>
                 </a>
-              </div>
-
-              <div className="pt-6 border-t border-neutral-200 flex items-center gap-6">
-                <span className="text-sm font-medium text-neutral-500">Follow me:</span>
-                <div className="flex items-center gap-4 text-neutral-700">
-                  <a href="https://github.com/ulugbekovpy" className="hover:text-black transition-colors" aria-label="GitHub">
-                    <svg className="w-[18px] h-[18px] fill-current" viewBox="0 0 24 24">
-                      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-                    </svg>
-                  </a>
-                  <a href="https://discord.com/users/1127295218455158845" className="hover:text-black transition-colors" aria-label="Discord">
-                    <svg className="w-[18px] h-[18px] fill-current" viewBox="0 0 127.14 96.36">
-                      <path d="M107.7,8.07A105.15,105.15,0,0,0,77.26,0a77.19,77.19,0,0,0-3.3,6.83A96.67,96.67,0,0,0,53.22,6.83,77.19,77.19,0,0,0,49.88,0,105.15,105.15,0,0,0,19.44,8.07C3.66,31.58-1.86,54.65,1,77.53A105.73,105.73,0,0,0,32,96.36a74.37,74.37,0,0,0,6.77-11,68.43,68.43,0,0,1-10.64-5.12c.91-.67,1.81-1.37,2.65-2.1a75.22,75.22,0,0,0,72.64,0c.84.73,1.74,1.43,2.65,2.1a68.43,68.43,0,0,1-10.64,5.12,74.37,74.37,0,0,0,6.77,11,105.73,105.73,0,0,0,31-18.83C129,54.65,123.51,31.58,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53S36.18,40.36,42.45,40.36,53.9,46,53.9,53,48.72,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.24,60,73.24,53S78.41,40.36,84.69,40.36,96.14,46,96.14,53,91,65.69,84.69,65.69Z" />
-                    </svg>
-                  </a>
-                  <a href="https://t.me/ulugbekovpy" className="hover:text-black transition-colors" aria-label="LinkedIn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-telegram" viewBox="0 0 16 16">
-                      <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0M8.287 5.906q-1.168.486-4.666 2.01-.567.225-.595.442c-.03.243.275.339.69.47l.175.055c.408.133.958.288 1.243.294q.39.01.868-.32 3.269-2.206 3.374-2.23c.05-.012.12-.026.166.016s.042.12.037.141c-.03.129-1.227 1.241-1.846 1.817-.193.18-.33.307-.358.336a8 8 0 0 1-.188.186c-.38.366-.664.64.015 1.088.327.216.589.393.85.571.284.194.568.387.936.629q.14.092.27.187c.331.236.63.448.997.414.214-.02.435-.22.547-.82.265-1.417.786-4.486.906-5.751a1.4 1.4 0 0 0-.013-.315.34.34 0 0 0-.114-.217.53.53 0 0 0-.31-.093c-.3.005-.763.166-2.984 1.09" />
-                    </svg>
-                  </a>
-                </div>
               </div>
             </div>
 
@@ -184,9 +262,13 @@ export default function App() {
                 <div key={project.name} className="group border border-neutral-200 rounded-xl p-5 hover:border-black transition-all bg-white shadow-sm flex flex-col justify-between min-h-[180px]">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <a href={project.link}>
-                        <h3 className="font-semibold text-lg text-neutral-900 group-hover:underline cursor-pointer">{project.name}</h3>
-                      </a>
+                      {project.link ? (
+                        <a href={project.link} target="_blank" rel="noreferrer">
+                          <h3 className="font-semibold text-lg text-neutral-900 group-hover:underline cursor-pointer">{project.name}</h3>
+                        </a>
+                      ) : (
+                        <h3 className="font-semibold text-lg text-neutral-900">{project.name}</h3>
+                      )}
                       <span className="text-xs text-neutral-400 font-mono">{project.year}</span>
                     </div>
                     <p className="text-sm text-neutral-600 leading-relaxed">
@@ -201,6 +283,111 @@ export default function App() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {currentPage === 'blog' && (
+          <div className="space-y-8 animate-fadeIn max-w-3xl mx-auto w-full">
+            <div className="space-y-2">
+              <h2 className="text-3xl font-bold tracking-tight">Blog</h2>
+              <p className="text-neutral-500 text-sm">Posts from telegram channel @ulugbekovpy</p>
+            </div>
+
+            {loading ? (
+              <div className="text-center py-12 text-sm text-neutral-400 font-mono animate-pulse">
+                Fetching fresh posts...
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {posts.map((post) => {
+                  return (
+                    <article 
+                      key={post.id} 
+                      onClick={() => { setSelectedPostId(post.id); setCurrentPage('blog-view'); }}
+                      className="group border border-neutral-200 rounded-xl overflow-hidden hover:border-black transition-all bg-white shadow-sm cursor-pointer flex flex-col md:flex-row min-h-[160px]"
+                    >
+                      {post.image && (
+                        <div className="md:w-1/3 w-full h-48 md:h-auto overflow-hidden bg-neutral-50 relative">
+                          <img 
+                            src={post.image} 
+                            alt={post.title} 
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                            loading="lazy"
+                          />
+                        </div>
+                      )}
+                      
+                      <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-xs text-neutral-400 font-mono">
+                            <span>{post.date}</span>
+                            <div className="flex items-center gap-2">
+                              {post.tags.map(tag => (
+                                <span key={tag} className="bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded text-[10px]">{tag}</span>
+                              ))}
+                            </div>
+                          </div>
+                          <h3 className="font-bold text-xl text-neutral-900 transition-colors">
+                            {post.title}
+                          </h3>
+                          <p className="text-sm text-neutral-600 leading-relaxed line-clamp-3">
+                            {post.excerpt}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-4 border-t border-neutral-100">
+                          <span className="text-xs font-medium text-neutral-400 group-hover:text-black transition-colors flex items-center gap-1">
+                            Read
+                            <svg className="w-3 h-3 transform group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                            </svg>
+                          </span>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {currentPage === 'blog-view' && currentPost && (
+          <div className="animate-fadeIn max-w-2xl mx-auto w-full space-y-8">
+            <button 
+              onClick={() => setCurrentPage('blog')}
+              className="inline-flex items-center gap-2 text-sm font-medium text-neutral-500 hover:text-black transition-colors group"
+            >
+              <svg className="w-4 h-4 transform group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+              </svg>
+              <span>Back to list</span>
+            </button>
+
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-400 font-mono">
+                <span>{currentPost.date}</span>
+                <span>•</span>
+                <a href={currentPost.link} target="_blank" rel="noreferrer" className="underline hover:text-black">View in Telegram</a>
+              </div>
+              
+              <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-neutral-900 leading-tight">
+                {currentPost.title}
+              </h1>
+            </div>
+
+            {currentPost.image && (
+              <div className="w-full max-h-[440px] overflow-hidden rounded-xl bg-neutral-100 shadow-sm">
+                <img src={currentPost.image} alt="Post media content" className="w-full h-full object-cover" />
+              </div>
+            )}
+
+            <hr className="border-neutral-200" />
+
+            <div 
+              className="prose prose-neutral max-w-none text-neutral-800 text-base leading-relaxed space-y-4 blog-content-html"
+              dangerouslySetInnerHTML={{ __html: currentPost.content }}
+            />
           </div>
         )}
       </main>
